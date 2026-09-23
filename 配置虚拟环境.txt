@@ -1,0 +1,1 @@
+d:\file_py_30d\.venv\Scripts\activate
