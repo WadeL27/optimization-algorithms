@@ -44,3 +44,29 @@ def obstacle_clearance(x):
     """
     pos = x[:, :2]
     return np.sum((pos - CENTER) ** 2, axis=1) - R_SAFE ** 2
+
+def dynamics_jac(x, u):
+    """Return (f, fx, fu) at (x, u) for the bicycle model.
+
+    State: [x, y, θ, v]
+    Control: [a, ω]
+    """
+    theta, v = x[2], x[3]
+    a, omega = u[0], u[1]
+    f = np.array([v * np.cos(theta),
+                  v * np.sin(theta),
+                  omega,
+                  a])
+    fx = np.array([
+        [0.0, 0.0, -v * np.sin(theta), np.cos(theta)],
+        [0.0, 0.0,  v * np.cos(theta), np.sin(theta)],
+        [0.0, 0.0,  0.0,               0.0],
+        [0.0, 0.0,  0.0,               0.0],
+    ])
+    fu = np.array([
+        [0.0, 0.0],
+        [0.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+    ])
+    return f, fx, fu

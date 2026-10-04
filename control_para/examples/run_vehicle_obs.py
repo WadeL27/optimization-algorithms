@@ -11,7 +11,7 @@ from scipy.optimize import minimize
 from control_para.problem_setting import vehicle_obs as vo
 from control_para.solver.integrator import simulate
 from control_para.solver.optimize import (
-    make_objective, make_constraint, make_penalty_constraint, solve_parameterized
+    make_objective_finite_diff, make_constraint, make_objective_with_grad, make_penalty_constraint, solve_parameterized
 )
 
 
@@ -22,15 +22,15 @@ def run_hard_constraint(params, m=2, verbose=True):
     x0, xf = params['x0'], params['xf']
     dt = T / N
 
-    objective = make_objective(vo.dynamics, x0, xf, dt, m=m)
+    objective,_ = make_objective_finite_diff(vo.dynamics, x0, xf, dt, m=m)
     constraint = make_constraint(vo.dynamics, x0, dt, m, vo.obstacle_clearance)
 
     # ---- Stage 1: unconstrained BFGS to get a moving seed ----
     u_init = np.zeros(N * m)
     print("\n--- Stage 1: BFGS unconstrained ---")
     res_stage1 = solve_parameterized(
-        objective, u_init, method='BFGS',
-        verbose=verbose, print_every=200, tag='stage1-BFGS',
+        objective, u_init, method='BFGS', 
+        verbose=verbose, print_every=100, tag='stage1-BFGS',
         gtol=1e-6, maxiter=2000,
     )
 
@@ -42,14 +42,30 @@ def run_hard_constraint(params, m=2, verbose=True):
 
     # ---- Stage 2: SLSQP with hard constraint, seeded from stage 1 ----
     print("\n--- Stage 2: SLSQP with hard constraint ---")
-    res = solve_parameterized(
+    # 差分格式计算梯度版本
+    '''
+    objective_fd, _ = make_objective_finite_diff(vo.dynamics, x0, xf, dt, m=2)
+    res_fd = solve_parameterized(
         objective, res_stage1.x, method='SLSQP',
         constraints={'type': 'ineq', 'fun': constraint},
-        constraint_func=constraint,
+        constraint_func=constraint, jac=None,
         verbose=verbose, print_every=1, tag='stage2-SLSQP',
         maxiter=500, ftol=1e-6,
     )
-    return res, N, m, dt
+    '''
+
+    # 解析梯度版本
+    objective_g, gradient_g = make_objective_with_grad(
+    vo.dynamics_jac, x0, xf, dt, m=2)
+    res_analytic = solve_parameterized(
+            objective_g, res_stage1.x, method='SLSQP',
+            constraints={'type': 'ineq', 'fun': constraint},
+            constraint_func=constraint,
+            jac=gradient_g,
+            verbose=True, print_every=1, tag='SLSQP-analytic',
+    maxiter=500, ftol=1e-6,
+)
+    return res_analytic, N, m, dt
 
 
 def run_penalty(params, m=2, rho=1e4, verbose=True):
@@ -58,7 +74,7 @@ def run_penalty(params, m=2, rho=1e4, verbose=True):
     x0, xf = params['x0'], params['xf']
     dt = T / N
 
-    objective = make_objective(vo.dynamics, x0, xf, dt, m=m)
+    objective, _ = make_objective_finite_diff(vo.dynamics, x0, xf, dt, m=m)
     penalty = make_penalty_constraint(vo.dynamics, x0, dt, m,
                                        vo.obstacle_clearance, rho=rho)
     constraint = make_constraint(vo.dynamics, x0, dt, m, vo.obstacle_clearance)
@@ -70,8 +86,8 @@ def run_penalty(params, m=2, rho=1e4, verbose=True):
     u_init = np.zeros(N * m)
     res = solve_parameterized(
         augmented, u_init, method='BFGS',
-        constraint_func=constraint,
-        verbose=verbose, print_every=1000, tag='penalty-BFGS',
+        constraint_func=constraint, jac=None,
+        verbose=verbose, print_every=100, tag='penalty-BFGS',
         gtol=1e-6, maxiter=2000,
     )
     return res, N, m, dt
@@ -122,8 +138,12 @@ def evaluate_and_plot(res, N, m, dt, params, tag):
 
     plt.tight_layout()
     plt.savefig(f'day04_{tag}.png', dpi=120)
+    plt.show()
+    # 图片显示太卡顿，先关掉
+    '''
     plt.show(block=False)
     plt.pause(0.5)
+    '''
 
 
 def main():

@@ -7,7 +7,7 @@ from scipy.optimize import minimize
 from .integrator import simulate
 
 
-def make_objective(f, x0, xf, dt, m=1, penalty=1e4):
+def make_objective_finite_diff(f, x0, xf, dt, m=1, penalty=1e4):
     """Build objective J(u) = ∫ u² dt + penalty * ||x(T) - xf||².
 
     Parameters
@@ -37,12 +37,10 @@ def make_objective(f, x0, xf, dt, m=1, penalty=1e4):
         terminal = penalty * np.sum((x[-1] - xf) ** 2)
         return running + terminal
 
-    return objective
-
-
+    return objective, None
 
 def solve_parameterized(objective, u_init, method='BFGS',
-                        constraints=None, constraint_func=None,
+                        constraints=None, constraint_func=None, jac=None,
                         verbose=True, print_every=1, tag='',
                         **options):
     """Wrapper around scipy.optimize.minimize with iteration display.
@@ -71,13 +69,13 @@ def solve_parameterized(objective, u_init, method='BFGS',
     kwargs = {'method': method, 'options': default_options}
     if constraints is not None:
         kwargs['constraints'] = constraints
+    if jac is not None:
+        kwargs['jac'] = jac
     if verbose:
         kwargs['callback'] = make_callback(objective, constraint_func,
                                            print_every=print_every, tag=tag)
 
     return minimize(objective, u_init, **kwargs)
-
-
 
 def make_constraint(f, x0, dt, m, constraint_func):
     """Build a constraint function g(u) ≥ 0 for scipy.optimize.
@@ -107,7 +105,6 @@ def make_constraint(f, x0, dt, m, constraint_func):
         return constraint_func(x)
 
     return constraint
-
 
 def make_penalty_constraint(f, x0, dt, m, constraint_func, rho=1e4):
     """Build a penalty term for constraint violation.
@@ -161,3 +158,25 @@ def make_callback(objective, constraint=None, print_every=1, tag=''):
               f'J_best = {state["J_best"]:.4e}{g_min_str} | t = {elapsed:.1f}s')
 
     return callback
+
+
+
+from .adjoint import gradient_adjoint
+
+
+def make_objective_with_grad(f_jac, x0, xf, dt, m=1, penalty=1e4):
+    """Return (objective, gradient) pair for minimize(jac=gradient)."""
+    from .integrator import simulate
+
+    def f(x, u):
+        return f_jac(x, u)[0]
+
+    def objective(u_flat):
+        u_nodes = u_flat.reshape(-1, m)
+        x = simulate(u_nodes, dt, x0, f)
+        return np.sum(u_nodes ** 2) * dt + penalty * np.sum((x[-1] - xf) ** 2)
+
+    def gradient(u_flat):
+        return gradient_adjoint(u_flat, dt, x0, xf, f_jac, m, penalty)
+
+    return objective, gradient

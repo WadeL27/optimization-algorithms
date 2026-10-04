@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from control_para.problem_setting import vehicle
 from control_para.solver.integrator import simulate
-from control_para.solver.optimize import make_objective, solve_parameterized
+from control_para.solver.optimize import make_objective_finite_diff, solve_parameterized
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     dt = T / N
     m = 2  # control dimension
 
-    objective = make_objective(vehicle.dynamics, x0, xf, dt, m=m)
+    objective,_ = make_objective_finite_diff(vehicle.dynamics, x0, xf, dt, m=m)
     u_init = np.zeros(N * m)
     res = solve_parameterized(objective, u_init, gtol=1e-6, maxiter=1000)
 
