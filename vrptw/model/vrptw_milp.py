@@ -146,36 +146,37 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
     # ---- Solve ----
     model.solve()
 
-    # ---- Extract routes ----
+# ---- Extract routes ----
     result = {
         'status': model.status,
         'objval': None,
         'routes': [],
     }
 
-    if model.status in (COPT.OPTIMAL, COPT.ITERLIMIT):
-        try:
-            result['objval'] = model.objval
-        except Exception:
-            return result
+    # Try to read objective regardless of status
+    try:
+        result['objval'] = model.objval
+    except Exception:
+        return result   # no feasible solution
 
-        for k in range(K):
-            route = [0]
-            current = 0
-            for _ in range(n):
-                nxt = None
-                for j in range(n):
-                    if j != current and (current, j, k) in x \
-                            and x[current, j, k].x > 0.5:
-                        nxt = j
-                        break
-                if nxt is None or nxt == 0:
+    # Extract routes
+    for k in range(K):
+        route = [0]
+        current = 0
+        for _ in range(n):
+            nxt = None
+            for j in range(n):
+                if j != current and (current, j, k) in x \
+                        and x[current, j, k].x > 0.5:
+                    nxt = j
                     break
-                route.append(nxt)
-                current = nxt
-            if len(route) > 1:
-                route.append(0)
-                result['routes'].append(route)
+            if nxt is None or nxt == 0:
+                break
+            route.append(nxt)
+            current = nxt
+        if len(route) > 1:
+            route.append(0)
+            result['routes'].append(route)
 
     return result
 

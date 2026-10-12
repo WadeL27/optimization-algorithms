@@ -17,6 +17,9 @@ def main():
     print(f"Total demand: {instance['demand'].sum():.0f}")
 
     result = solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True)
+    if result['objval'] is None:
+        print("No feasible solution found. Skipping plot.")
+        return
 
     print(f"\n=== Result ===")
     print(f"Status:    {result['status']}")

@@ -10,6 +10,7 @@ from vrptw.model.vrptw_milp import solve_vrptw
 
 
 def main():
+
     instance = get_instance_n(50)
     print(f"Customers: {instance['n'] - 1}")
     print(f"Vehicles:  {instance['n_vehicles']}")
@@ -17,7 +18,9 @@ def main():
     print(f"Total demand: {instance['demand'].sum():.0f}")
 
     result = solve_vrptw(instance, time_limit=120, mip_gap=0.01, verbose=True)
-
+    if result['objval'] is None:
+        print("No feasible solution found. Skipping plot.")
+        return
     print(f"\n=== Result ===")
     print(f"Status:    {result['status']}")
     print(f"Objective: {result['objval']}")
