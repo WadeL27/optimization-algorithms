@@ -45,6 +45,13 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
                     x[i, j, k] = model.addVar(
                         vtype=COPT.BINARY, name=f"x_{i}_{j}_{k}")
 
+
+    # y[k]: vehicle usage indicator  可用可不用
+        y = {}
+        for k in range(K):
+            y[k] = model.addVar(vtype=COPT.BINARY, name=f"y_{k}")                
+
+
     # t[i, k]: arrival time, bounded by time window
     t = {}
     for k in range(K):
@@ -58,7 +65,7 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
         for i in range(1, n):
             u[i, k] = model.addVar(
                 lb=1, ub=n - 1, vtype=COPT.CONTINUOUS, name=f"u_{i}_{k}")
-    ""
+    """
     # ---- Objective ---- 车辆成本不进入目标函数
     obj = cp.quicksum(
         d[i, j] * x[i, j, k]
@@ -67,18 +74,18 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
         for j in range(n)
         if i != j
     )
-    ""
-# 车辆固定成本（比如每辆车成本 = 50）
-    VEHICLE_COST = 50.0
+    """
+
+# ---- Objective ----车辆固定成本 
+    VEHICLE_COST = 0.0
 
     obj = cp.quicksum(
-        d[i, j] * x[i, j, k]
-         for k in range(K) 
-         for i in range(n) 
-         for j in range(n) 
-         if i != j
-        ) + VEHICLE_COST * cp.quicksum(x[0, j, k] for k in range(K) for j in range(1, n)
-)
+    d[i, j] * x[i, j, k]
+    for k in range(K) 
+    for i in range(n) 
+    for j in range(n) 
+    if i != j
+    ) + VEHICLE_COST * cp.quicksum(y[k] for k in range(K))
 
     model.setObjective(obj, COPT.MINIMIZE)
 
@@ -92,10 +99,10 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
     # ---- Constraint 2 & 3: each vehicle leaves and returns to depot ----
     for k in range(K):
         model.addConstr(
-            cp.quicksum(x[0, j, k] for j in range(1, n)) == 1,
+            cp.quicksum(x[0, j, k] for j in range(1, n)) <= y[k],
             name=f"depot_out_{k}")
         model.addConstr(
-            cp.quicksum(x[i, 0, k] for i in range(1, n)) == 1,
+            cp.quicksum(x[i, 0, k] for i in range(1, n)) <= y[k],
             name=f"depot_in_{k}")
 
     # ---- Constraint 4: flow conservation at customer nodes ----
@@ -134,6 +141,8 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
                         u[j, k] - u[i, k] + n * x[i, j, k] <= n - 1,
                         name=f"mtz_{i}_{j}_{k}")
 
+                
+
     # ---- Solve ----
     model.solve()
 
@@ -169,3 +178,25 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
                 result['routes'].append(route)
 
     return result
+
+def check_route_feasibility(route, instance):
+    dist = instance['dist']
+    q = instance['demand']
+    e = instance['ready']
+    l = instance['due']
+    s = instance['service']
+    Q = instance['capacity']
+
+    total_load = sum(q[i] for i in route if i != 0)
+    if total_load > Q:
+        return False, f"capacity exceeded: {total_load} > {Q}"
+
+    t = 0.0
+    for k in range(len(route) - 1):
+        i, j = route[k], route[k + 1]
+        t += s[i] + dist[i, j]
+        if t > l[j]:
+            return False, f"late at node {j}: {t:.1f} > {l[j]:.0f}"
+        t = max(t, e[j])
+
+    return True, f"load={total_load:.0f}, return_time={t:.1f}"

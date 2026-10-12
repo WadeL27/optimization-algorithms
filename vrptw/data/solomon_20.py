@@ -62,3 +62,63 @@ def get_instance():
         'capacity': CAPACITY,
         'n_vehicles': N_VEHICLES,
     }
+
+
+def load_solomon(filepath, n_customers=None):
+    """Parse Solomon format and return instance dict."""
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+    
+    # Find vehicle capacity line
+    capacity = None
+    for i, line in enumerate(lines):
+        if 'CAPACITY' in line.upper():
+            capacity = float(lines[i + 1].split()[-1])
+            break
+    
+    # Parse customer rows
+    data = []
+    started = False
+    for line in lines:
+        parts = line.split()
+        if len(parts) == 7 and parts[0].isdigit():
+            # First data row triggers start
+            if not started:
+                started = True
+            data.append([float(x) for x in parts])
+    
+    if n_customers is not None:
+        data = data[:n_customers + 1]
+    
+    data = np.array(data)
+    coords  = data[:, 1:3]
+    demand  = data[:, 3]
+    ready   = data[:, 4]
+    due     = data[:, 5]
+    service = data[:, 6]
+    
+    n = len(data)
+    dist = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            dist[i, j] = np.linalg.norm(coords[i] - coords[j])
+    
+    return {
+        'n': n,
+        'coords': coords,
+        'demand': demand,
+        'ready': ready,
+        'due': due,
+        'service': service,
+        'dist': dist,
+        'capacity': capacity,
+        'n_vehicles': 25,   # C101 25 辆车
+    }
+
+
+def get_instance_n(n_customers=50):
+    """Load first n_customers from Solomon C101."""
+    import os
+    filepath = os.path.join(os.path.dirname(__file__), 'c101.txt')
+    return load_solomon(filepath, n_customers=n_customers)
+    
