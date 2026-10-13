@@ -21,9 +21,12 @@ def main():
         print("No feasible solution found. Skipping plot.")
         return
     print(f"\n=== Result ===")
-    print(f"Status:    {result['status']}")
-    print(f"Objective: {result['objval']}")
-    print(f"Routes: {len(result['routes'])} vehicles used")
+    print(f"Status:      {result['status']}")
+    print(f"Objective:   {result['objval']}")
+    print(f"Best bound:  {result['best_bound']}")
+    print(f"Best gap:    {result['best_gap']}")
+    print(f"Solve time:  {result['solve_time']:.2f}s")
+    print(f"Routes:      {len(result['routes'])} vehicles used")
     for k, route in enumerate(result['routes']):
         print(f"  Vehicle {k+1}: {' -> '.join(str(i) for i in route)}")
 

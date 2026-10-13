@@ -13,7 +13,8 @@ import coptpy as cp
 from coptpy import COPT
 
 
-def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
+def solve_vrptw(instance, time_limit=60, mip_gap=0.01,
+                threads=None, verbose=True):
     n = instance['n']
     K = instance['n_vehicles']
     Q = instance['capacity']
@@ -34,7 +35,8 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
         model.setParam(COPT.Param.Logging, 0)
     model.setParam(COPT.Param.TimeLimit, time_limit)
     model.setParam(COPT.Param.RelGap, mip_gap)
-
+    if threads is not None:
+        model.setParam(COPT.Param.Threads, threads)
     # ---- Decision variables ----
     # x[i, j, k]
     x = {}
@@ -146,16 +148,22 @@ def solve_vrptw(instance, time_limit=60, mip_gap=0.01, verbose=True):
     # ---- Solve ----
     model.solve()
 
-# ---- Extract routes ----
+    # ---- Extract results ----
     result = {
         'status': model.status,
         'objval': None,
+        'best_bound': None,
+        'best_gap': None,
+        'solve_time': None,
         'routes': [],
     }
 
-    # Try to read objective regardless of status
+    # Read objective and solver attributes if feasible solution exists
     try:
         result['objval'] = model.objval
+        result['best_bound'] = model.getAttr(COPT.Attr.BestBnd)   # MIP 下界
+        result['best_gap']   = model.getAttr(COPT.Attr.BestGap)   # MIP 相对 gap
+        result['solve_time'] = model.getAttr(COPT.Attr.SolvingTime)  # 求解耗时（秒）
     except Exception:
         return result   # no feasible solution
 
