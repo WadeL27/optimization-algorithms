@@ -116,9 +116,8 @@ def load_solomon(filepath, n_customers=None):
     }
 
 
-def get_instance_n(n_customers=50):
-    """Load first n_customers from Solomon C101."""
+def get_instance_n(n_customers=50, name='c101'):
     import os
-    filepath = os.path.join(os.path.dirname(__file__), 'c101.txt')
+    filepath = os.path.join(os.path.dirname(__file__), f'{name}.txt')
     return load_solomon(filepath, n_customers=n_customers)
     
