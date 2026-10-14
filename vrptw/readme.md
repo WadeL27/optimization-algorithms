@@ -102,3 +102,63 @@ customers lock endpoints under the savings construction.
 Key finding: the heuristic beats MILP on C101-100 within 0.24 seconds.
 The remaining gap comes from vehicle count (12 vs 10); reducing it
 requires merge or cross-exchange operators beyond relocate.
+
+## Heuristics / 启发式算法
+
+Two construction methods and two improvement operators.
+
+两种构造方法和两种改进算子。
+
+**Construction / 构造：**
+- Savings (Clarke-Wright) / 节约算法
+- Nearest neighbor / 最近邻
+
+**Improvement / 改进：**
+- Relocate: move one customer across routes / 跨路径移动单个客户
+- 2-opt: reverse a segment within one route / 路径内反转子段
+
+Pipeline: `construction → relocate → 2-opt`.
+
+### Results (savings + relocate + 2-opt)
+
+| Instance | Vehicles | Distance | Time | Gap vs Optimum |
+|---|---|---|---|---|
+| C101-25 | 4 | 223.08 | 0.017s | +16.6% |
+| C101-100 | 12 | 897.27 | 0.24s | +8.2% |
+
+### Results (nearest neighbor + relocate + 2-opt)
+
+| Instance | Vehicles | Distance | Time | Gap vs Optimum |
+|---|---|---|---|---|
+| C101-25 | 3 | 319.92 | 0.008s | +67% |
+| C101-100 | 12 | 1409.09 | 1.58s | +70% |
+| R101-100 | 23 | 1973.60 | 0.77s | +19.6% |
+
+### Observations / 观察
+
+1. **Savings + relocate beats MILP on C101-100.** 0.24s / 897.27 vs
+   MILP's 120s / 980.01. Faster by 500× with a better solution.
+   节约算法 + relocate 在 C101-100 上优于 MILP：0.24 秒得到 897.27，
+   比 MILP 120 秒的 980.01 更优。
+
+2. **Relocate is the dominant operator.** 2-opt gave zero improvement on
+   all 8 instances because many routes contain only 1-3 customers.
+   relocate 是主要贡献算子。2-opt 在 8 个实例上都没有改进，因为很多
+   路径只服务 1-3 个客户。
+
+3. **Nearest neighbor fails on clustered instances.** On C101-100, nearest
+   gives gap 70% while savings gives 8.2%. Pure spatial greed ignores time
+   windows, fragmenting the solution.
+   最近邻在聚集型客户上表现差。C101-100 上最近邻 gap 70%，节约算法
+   gap 8.2%。纯空间贪心忽略时间窗，导致路径碎片化。
+
+4. **The remaining gap is vehicle count, not distance.** C101-100 uses 12
+   vehicles vs optimum 10. Relocate cannot merge routes.
+   剩余 gap 来自车辆数。C101-100 用 12 辆车，最优 10 辆。relocate 无法
+   合并路径。
+
+### Run / 运行
+
+```bash
+python -m vrptw.heuristic.savings
+python -m vrptw.heuristic.nearest_neighbor

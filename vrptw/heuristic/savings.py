@@ -141,7 +141,7 @@ if __name__ == '__main__':
     import time
 
     # ---- Config ----
-    N_CUSTOMERS = 100
+    N_CUSTOMERS = 50
     NAME = 'c101'
     USE_RELOCATE = True     # 是否加 relocate
     USE_2OPT = True         # 是否加 2-opt
