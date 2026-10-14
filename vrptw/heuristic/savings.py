@@ -123,28 +123,24 @@ def check_time_windows(route, instance):
         t = max(t, e[j])  # 早到则等待
     return True
     
-'''
-if __name__ == '__main__':
-    import numpy as np
-    q = np.array([0, 10, 20, 30, 40])
-    print("Test route_load:")
-    print("  [0, 1, 3, 0]  →", route_load([0, 1, 3, 0], q), "(expected 40)")
-    print("  [0, 0]        →", route_load([0, 0], q), "(expected 0)")
-    print("  [0,1,2,3,4,0] →", route_load([0, 1, 2, 3, 4, 0], q), "(expected 100)")
-'''
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+    import copy
+    import time
     from vrptw.data.solomon_20 import get_instance_n
     from vrptw.heuristic.two_opt import improve_all, route_distance
     from vrptw.heuristic.relocate import relocate
-    import time
+    from vrptw.heuristic.local_refine import local_refine
 
     # ---- Config ----
     N_CUSTOMERS = 50
-    NAME = 'c101'
-    USE_RELOCATE = True     # 是否加 relocate
-    USE_2OPT = True         # 是否加 2-opt
+    NAME = 'r101'
+    USE_RELOCATE = True
+    USE_2OPT = True
+    USE_LOCAL_REFINE = True     # 是否启用 COPT 局部精确优化
+    N_ROUTES_TO_REFINE = 5      # 子问题路径数
+    REFINE_TIME_LIMIT = 10      # 每个子问题 COPT 时间上限
 
     instance = get_instance_n(N_CUSTOMERS, name=NAME)
     n = instance['n']
@@ -155,89 +151,127 @@ if __name__ == '__main__':
     print(f"Capacity:  {instance['capacity']}")
     print(f"Total demand: {instance['demand'].sum():.0f}")
 
-    # ---- Run savings ----
+    # ---- Stage 1: savings ----
     t0 = time.time()
-    routes = savings_algorithm(instance)
+    r_savings = savings_algorithm(instance)
     t_savings = time.time() - t0
-    dist_savings = sum(route_distance(r, d) for r in routes)
-    n_savings = len(routes)
+    dist_savings = sum(route_distance(r, d) for r in r_savings)
 
-    # ---- Optional: relocate ----
+    # ---- Stage 2: relocate ----
     if USE_RELOCATE:
         t0 = time.time()
-        routes = relocate(routes, instance, verbose=False)
+        r_relocate = relocate(copy.deepcopy(r_savings), instance)
         t_relocate = time.time() - t0
+        dist_relocate = sum(route_distance(r, d) for r in r_relocate)
     else:
+        r_relocate = copy.deepcopy(r_savings)
         t_relocate = 0.0
-    dist_relocate = sum(route_distance(r, d) for r in routes)
-    n_relocate = len(routes)
+        dist_relocate = dist_savings
 
-    # ---- Optional: 2-opt ----
+    # ---- Stage 3: 2-opt ----
     if USE_2OPT:
         t0 = time.time()
-        routes = improve_all(routes, instance)
+        r_2opt = improve_all(copy.deepcopy(r_relocate), instance)
         t_2opt = time.time() - t0
+        dist_2opt = sum(route_distance(r, d) for r in r_2opt)
     else:
+        r_2opt = copy.deepcopy(r_relocate)
         t_2opt = 0.0
+        dist_2opt = dist_relocate
 
-    dist_final = sum(route_distance(r, d) for r in routes)
+    # ---- Stage 4: local exact refinement with COPT ----
+    if USE_LOCAL_REFINE:
+        t0 = time.time()
+        r_refined = local_refine(copy.deepcopy(r_2opt), instance,
+                                 n_routes=N_ROUTES_TO_REFINE,
+                                 time_limit=REFINE_TIME_LIMIT,
+                                 verbose=True)
+        t_refine = time.time() - t0
+        dist_refined = sum(route_distance(r, d) for r in r_refined)
+    else:
+        r_refined = copy.deepcopy(r_2opt)
+        t_refine = 0.0
+        dist_refined = dist_2opt
 
-    # ---- Print result ----
-    method_name = 'savings'
-    if USE_RELOCATE:
-        method_name += '+relocate'
-    if USE_2OPT:
-        method_name += '+2opt'
+    # ---- Determine final result ----
+    if USE_LOCAL_REFINE:
+        final_routes, final_dist = r_refined, dist_refined
+        method_name = 'savings+relocate+2opt+COPT_refine'
+    elif USE_2OPT:
+        final_routes, final_dist = r_2opt, dist_2opt
+        method_name = 'savings+relocate+2opt'
+    elif USE_RELOCATE:
+        final_routes, final_dist = r_relocate, dist_relocate
+        method_name = 'savings+relocate'
+    else:
+        final_routes, final_dist = r_savings, dist_savings
+        method_name = 'savings'
 
+    # ---- Stage-by-stage report ----
     print(f"\n=== Stage-by-stage ===")
-    print(f"  savings           : veh={n_savings:2d}, dist={dist_savings:8.2f}, time={t_savings:.3f}s")
+    print(f"  savings        : veh={len(r_savings):2d}, dist={dist_savings:8.2f}, time={t_savings:.3f}s")
     if USE_RELOCATE:
-        print(f"  after relocate    : veh={n_relocate:2d}, dist={dist_relocate:8.2f}, time={t_relocate:.3f}s")
+        print(f"  + relocate     : veh={len(r_relocate):2d}, dist={dist_relocate:8.2f}, time={t_relocate:.3f}s")
     if USE_2OPT:
-        print(f"  after 2opt        : veh={len(routes):2d}, dist={dist_final:8.2f}, time={t_2opt:.3f}s")
+        print(f"  + 2-opt        : veh={len(r_2opt):2d}, dist={dist_2opt:8.2f}, time={t_2opt:.3f}s")
+    if USE_LOCAL_REFINE:
+        print(f"  + COPT refine  : veh={len(r_refined):2d}, dist={dist_refined:8.2f}, time={t_refine:.3f}s")
 
-    print(f"\n=== Result ===")
-    print(f"Method:        {method_name}")
-    print(f"Routes:        {len(routes)} vehicles used")
-    print(f"Total distance: {dist_final:.2f}")
+    # ---- Final result ----
+    print(f"\n=== Final Result ===")
+    print(f"Method:         {method_name}")
+    print(f"Routes:         {len(final_routes)} vehicles used")
+    print(f"Total distance: {final_dist:.2f}")
     print()
-    for k, route in enumerate(routes, 1):
+    for k, route in enumerate(final_routes, 1):
         print(f"  Vehicle {k}: {' -> '.join(str(i) for i in route)}")
 
     # ---- Feasibility check ----
     from vrptw.model.vrptw_milp import check_route_feasibility
     print("\nFeasibility check:")
-    for k, route in enumerate(routes, 1):
+    for k, route in enumerate(final_routes, 1):
         ok, msg = check_route_feasibility(route, instance)
         status = "OK" if ok else "FAIL"
         print(f"  Vehicle {k}: [{status}] {msg}")
 
     # ---- Plot ----
     coords = instance['coords']
-    fig, ax = plt.subplots(figsize=(8, 8))
+    stages_to_plot = [('savings', r_savings, dist_savings)]
+    if USE_RELOCATE:
+        stages_to_plot.append(('+relocate', r_relocate, dist_relocate))
+    if USE_2OPT:
+        stages_to_plot.append(('+2opt', r_2opt, dist_2opt))
+    if USE_LOCAL_REFINE:
+        stages_to_plot.append(('+COPT', r_refined, dist_refined))
 
-    ax.scatter(coords[1:, 0], coords[1:, 1], c='blue', s=60, zorder=3,
-               label='customers')
-    ax.scatter(coords[0, 0], coords[0, 1], c='red', s=250, marker='s',
-               zorder=4, label='depot')
+    n_plots = len(stages_to_plot)
+    fig, axes = plt.subplots(1, n_plots, figsize=(7 * n_plots, 7))
+    if n_plots == 1:
+        axes = [axes]
 
-    for i in range(1, n):
-        ax.annotate(str(i), (coords[i, 0], coords[i, 1]),
-                    xytext=(3, 3), textcoords='offset points', fontsize=8)
+    colors = plt.cm.tab20.colors
+    for ax, (stage_name, routes, dist) in zip(axes, stages_to_plot):
+        ax.scatter(coords[1:, 0], coords[1:, 1], c='blue', s=50, zorder=3,
+                   label='customers')
+        ax.scatter(coords[0, 0], coords[0, 1], c='red', s=200, marker='s',
+                   zorder=4, label='depot')
+        for i in range(1, n):
+            ax.annotate(str(i), (coords[i, 0], coords[i, 1]),
+                        xytext=(3, 3), textcoords='offset points', fontsize=7)
+        for k, route in enumerate(routes):
+            xs = [coords[i, 0] for i in route]
+            ys = [coords[i, 1] for i in route]
+            ax.plot(xs, ys, '-o', color=colors[k % 20], linewidth=1.5,
+                    markersize=5, label=f'veh {k+1}')
+        ax.set_title(f"{stage_name}: {len(routes)} routes, cost = {dist:.2f}",
+                     fontsize=11)
+        ax.legend(fontsize=7, loc='best', ncol=2)
+        ax.grid(True, alpha=0.3)
+        ax.set_aspect('equal')
 
-    colors = plt.cm.tab10.colors
-    for k, route in enumerate(routes):
-        xs = [coords[i, 0] for i in route]
-        ys = [coords[i, 1] for i in route]
-        ax.plot(xs, ys, '-o', color=colors[k % 10], linewidth=1.5,
-                markersize=6, label=f'vehicle {k+1}')
-
-    title = f"{NAME.upper()}-{n-1} ({method_name}): {len(routes)} routes, cost = {dist_final:.2f}"
-    ax.set_title(title)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    out_name = f"heuristic_{NAME}_{n-1}.png"
+    suffix = f"_r{int(USE_RELOCATE)}_2o{int(USE_2OPT)}_c{int(USE_LOCAL_REFINE)}"
+    out_name = f"heuristic_savings_{NAME}_{n-1}{suffix}.png"
     plt.savefig(out_name, dpi=120)
     print(f"\nPlot saved: {out_name}")
     plt.show()
