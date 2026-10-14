@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 import numpy as np
 import time
 
-def savings_algorithm(instance, time_limit=5.0):
+def savings_algorithm(instance, time_limit=5.0, debug_customers=None):
     """Clarke-Wright savings for VRPTW.
 
     Returns list of routes (each route is [0, ..., 0]).
@@ -33,9 +33,18 @@ def savings_algorithm(instance, time_limit=5.0):
         if time.time() - t0 > time_limit:
             print(f"[savings] time limit {time_limit}s reached, stopping")
             break
-
+        # ---- debug: only print if both i, j are in debug set ----
+        trace = (debug_customers is not None
+                 and i in debug_customers and j in debug_customers)
+        
         ri = find_route(routes, i)
         rj = find_route(routes, j)
+
+        if trace:
+            print(f"\n=== try merge ({i}, {j}), s_ij = {sij:.2f} ===")
+            print(f"  route_i = {ri}")
+            print(f"  route_j = {rj}")
+
         if ri is None or rj is None or ri is rj:
             continue
 
@@ -73,25 +82,32 @@ def is_endpoint(route, customer):
     return None
 
 def try_merge(ri, rj, i, j, instance):
-    # 找到 i 在 ri 的位置，j 在 rj 的位置
     pos_i = is_endpoint(ri, i)
     pos_j = is_endpoint(rj, j)
     if pos_i is None or pos_j is None:
         return None
-    # 按四种情况构造合并路径
-    if pos_i=='first' and pos_j=='first':
-        k=list(reversed(rj))[:-1]+ri[1:]
-    elif pos_i=='first' and pos_j=='last':
-        k=rj[0:-1]+ri[1:]
-    elif pos_i=='last' and pos_j=='first':
-        k=ri[0:-1]+ rj[1:]
-    else:
-        k=ri[0:-1]+list(reversed(rj))[1:]
 
-    if check_time_windows(k,instance):
-        return k
-    else :
-        return None
+    # 构造候选合并（可能有两个候选方向）
+    candidates = []
+
+    if pos_i == 'first' and pos_j == 'first':
+        candidates.append(list(reversed(ri))[:-1] + rj[1:])   # 方向 A
+        candidates.append(list(reversed(rj))[:-1] + ri[1:])   # 方向 B
+    elif pos_i == 'first' and pos_j == 'last':
+        candidates.append(rj[:-1] + ri[1:])                    # 唯一方向
+    elif pos_i == 'last' and pos_j == 'first':
+        candidates.append(ri[:-1] + rj[1:])                    # 唯一方向
+    else:  # last-last
+        candidates.append(ri[:-1] + list(reversed(rj))[1:])   # 方向 A
+        candidates.append(list(reversed(ri))[:-1] + rj[1:])   # 方向 B
+
+    # 依次尝试每个候选，返回第一个可行的
+    for k in candidates:
+        if route_load(k, instance['demand']) > instance['capacity']:
+            continue
+        if check_time_windows(k, instance):
+            return k
+    return None
 
 def check_time_windows(route, instance):
     """Check if route is time-feasible. Return True/False."""
@@ -121,11 +137,13 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from vrptw.data.solomon_20 import get_instance_n
     from vrptw.heuristic.two_opt import improve_all, route_distance
+    from vrptw.heuristic.relocate import relocate
     import time
 
     # ---- Config ----
-    N_CUSTOMERS = 25       
-    NAME = 'c101'           
+    N_CUSTOMERS = 100
+    NAME = 'c101'
+    USE_RELOCATE = True     # 是否加 relocate
     USE_2OPT = True         # 是否加 2-opt
 
     instance = get_instance_n(N_CUSTOMERS, name=NAME)
@@ -142,6 +160,17 @@ if __name__ == '__main__':
     routes = savings_algorithm(instance)
     t_savings = time.time() - t0
     dist_savings = sum(route_distance(r, d) for r in routes)
+    n_savings = len(routes)
+
+    # ---- Optional: relocate ----
+    if USE_RELOCATE:
+        t0 = time.time()
+        routes = relocate(routes, instance, verbose=False)
+        t_relocate = time.time() - t0
+    else:
+        t_relocate = 0.0
+    dist_relocate = sum(route_distance(r, d) for r in routes)
+    n_relocate = len(routes)
 
     # ---- Optional: 2-opt ----
     if USE_2OPT:
@@ -154,11 +183,23 @@ if __name__ == '__main__':
     dist_final = sum(route_distance(r, d) for r in routes)
 
     # ---- Print result ----
+    method_name = 'savings'
+    if USE_RELOCATE:
+        method_name += '+relocate'
+    if USE_2OPT:
+        method_name += '+2opt'
+
+    print(f"\n=== Stage-by-stage ===")
+    print(f"  savings           : veh={n_savings:2d}, dist={dist_savings:8.2f}, time={t_savings:.3f}s")
+    if USE_RELOCATE:
+        print(f"  after relocate    : veh={n_relocate:2d}, dist={dist_relocate:8.2f}, time={t_relocate:.3f}s")
+    if USE_2OPT:
+        print(f"  after 2opt        : veh={len(routes):2d}, dist={dist_final:8.2f}, time={t_2opt:.3f}s")
+
     print(f"\n=== Result ===")
-    print(f"Method:        savings{'+2opt' if USE_2OPT else ''}")
+    print(f"Method:        {method_name}")
     print(f"Routes:        {len(routes)} vehicles used")
     print(f"Total distance: {dist_final:.2f}")
-    print(f"Time:          savings={t_savings:.3f}s, 2opt={t_2opt:.3f}s")
     print()
     for k, route in enumerate(routes, 1):
         print(f"  Vehicle {k}: {' -> '.join(str(i) for i in route)}")
@@ -191,7 +232,7 @@ if __name__ == '__main__':
         ax.plot(xs, ys, '-o', color=colors[k % 10], linewidth=1.5,
                 markersize=6, label=f'vehicle {k+1}')
 
-    title = f"{NAME.upper()}-{n-1} (heuristic): {len(routes)} routes, cost = {dist_final:.2f}"
+    title = f"{NAME.upper()}-{n-1} ({method_name}): {len(routes)} routes, cost = {dist_final:.2f}"
     ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)

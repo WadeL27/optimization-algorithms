@@ -77,3 +77,28 @@ MILP 分支定界的并行效率受同步开销和搜索树结构限制。
 
 - 先修 `try_merge` 的方向问题。
 - 如果还不够，就换成 Solomon I1 插入启发式。
+
+### Heuristic (Savings + 2-opt)
+
+| Instance | Method | Vehicles | Distance | Time | Gap vs Optimum |
+|---|---|---|---|---|---|
+| C101-25 | savings+2opt | 4 | 260.97 | 0.002s | +36% |
+| C101-100 | savings+2opt | 12 | 930.12 | 0.05s | +12% |
+| C101-100 | MILP (120s) | 13 | 980.01 | 120s | +18% |
+
+**Observation**: The heuristic beats MILP on C101-100 within a
+fraction of the time. On C101-25, the gap is larger because early-due
+customers lock endpoints under the savings construction.
+
+
+### Heuristic vs MILP (C101-100)
+
+| Method | Vehicles | Distance | Time | Gap vs Optimum |
+|---|---|---|---|---|
+| MILP (120s) | 13 | 980.01 | 120s | +18.2% |
+| savings+relocate+2opt | 12 | 897.27 | 0.24s | +8.2% |
+| Solomon optimum | 10 | 828.94 | — | — |
+
+Key finding: the heuristic beats MILP on C101-100 within 0.24 seconds.
+The remaining gap comes from vehicle count (12 vs 10); reducing it
+requires merge or cross-exchange operators beyond relocate.
