@@ -49,3 +49,31 @@ overhead and the structure of the search tree.
 
 **结论**：线程数对本实例影响极小，1 线程与 20 线程的下界差 0.05%。
 MILP 分支定界的并行效率受同步开销和搜索树结构限制。
+
+## Status / 项目状态
+
+### Completed / 已完成
+
+- MILP model with COPT on C101/R101, tested 25/50/100 customers.
+- Parameter sensitivity study: TimeLimit, RelGap, Threads.
+
+- 用 COPT 跑通了 C101/R101 的 MILP 模型，覆盖 25/50/100 客户。
+- 做了参数敏感性分析（TimeLimit、RelGap、Threads）。
+
+### Known problems / 已知问题
+
+- The savings heuristic produces too many routes. Two reasons:
+  1. `try_merge` only tries one direction when reversing is needed.
+  2. Endpoints get locked early under tight time windows.
+
+- 节约算法生成的路径数偏多，两个原因：
+  1. `try_merge` 在需要反转的两种情况下只试了一个方向。
+  2. 时间窗太紧，路径端点很容易被锁死。
+
+### What's next / 下一步
+
+- Fix the direction issue in `try_merge`.
+- If that's not enough, replace savings with Solomon I1 insertion heuristic.
+
+- 先修 `try_merge` 的方向问题。
+- 如果还不够，就换成 Solomon I1 插入启发式。
